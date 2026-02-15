@@ -14,15 +14,15 @@ External API → Kafka → Spark → PostgreSQL → Power BI
 
 - `Kafka – Real-time streaming ingestion`
 
-- Spark – Distributed data processing
+- `Spark – Distributed data processing`
 
-- PostgreSQL – Structured data storage
+- `PostgreSQL – Structured data storage`
 
-- Power BI – Business intelligence visualization
+- `Power BI – Business intelligence visualization`
 
-- Docker & Docker Compose – Containerized services
+- `Docker & Docker Compose – Containerized services`
 
-- Git & GitHub – Version control
+- `Git & GitHub – Version control`
 
 ### 🏗 System Architecture
 ![Data Pipeline Architecture](./assets/pipeline.png)
