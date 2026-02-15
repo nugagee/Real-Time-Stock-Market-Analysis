@@ -1,0 +1,141 @@
+services:
+  spark-master:
+    image: spark:3.5.1-python3  # Use the official Spark image with Python 3 support
+    container_name: spark-master # Name the container for easier reference
+    command: [  #Override the default command to start the Spark master
+      "/opt/spark/bin/spark-class",
+      "org. apache. spark. deploy.master.Master",
+      "--host", "spark-master",
+      "--port", "7077",
+      "--webui-port", "8080"]  # Expose the necessary ports for Spark master
+    environment:
+      - SPARK MODE=master  # Set the Spark mode to master
+      - SPARK_MASTER_HOST=spark-master  #Hostname for the Spark master, used for worker nodes to connect
+    ports:
+      - "8081:8080"  # Expose the Spark master web UI on port 8081
+      - "7077:7077"  # Expose the Spark master port for worker nodes to connect
+    volumes:
+      - spark-data:/opt/spark-data   # Mount a volume for Spark data persistence
+    networks:
+      - stock_data  # Connect to the same network as other services
+
+
+
+
+# -----------------------------------
+# Spark Worker Mode
+# ------------------------------------
+
+
+  spark-worker:
+    image: spark:3.5.1-python3  # Use the same Spark image for the worker
+    container_name: spark-worker # Name the container for easier reference
+    command: [  # Override the default command to start the Spark worker
+      "/opt/spark/bin/spark-class",
+      "org.apache.spark.deploy.worker.Worker",
+      "spark://spark-master:7077",
+      "--webui-port", "8081"]  # Connect to the Spark master using its hostname and port
+    environment:
+      - SPARK_WORKER_CORES=2  # Allocate 2 CPU cores for the Spark worker
+      - SPARK_WORKER_MEMORY=2G  # Allocate 2GB of memory for the Spark worker
+    depends_on:
+      - spark-master  # Ensure the Spark master starts before the worker
+    # ports:
+    #   - "8082:8081"  # Expose the Spark worker web UI on port 8082
+    volumes:
+      - spark-data:/opt/spark-data   # Mount the same volume for Spark data persistence
+    networks:
+      - stock_data  # Connect to the same network as other services
+
+
+
+  # --------------------------KAFKA SERVICE----------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.4.10  # Use the Confluent Kafka image
+    container_name: kafka # Name the container for easier reference
+    ports:
+      - "9092:9092"  # Expose Kafka's default port
+      - "9094:9094"  # Expose Kafka's internal port for inter-broker communication
+    environment:
+      KAFKA_KRAFT_MODE: "true"  # Enable KRaft mode for Kafka, which eliminates the need for Zookeeper
+      KAFKA_OROCESS_ROLES: controller.broker  # Set the process roles for Kafka to both controller and broker
+      KAFKA_BROKER_ID: 1  # Set a unique broker ID for Kafka
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"  # Define the controller quorum voters for Kafka
+      # DEFINE ALL LISTENER ENDPOINTS AND PORTS
+      KAFKA_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://0.0.0.0:9094,CONTROLLER://0.0.0.0:9093  # Define the listeners for Kafka, including internal, external, and controller listeners
+      # MAP LISTENER NAMES TO SECURITY PROTOCOLS
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT  # Map the listener names to their respective security protocols
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL  # Set the inter-broker listener name for Kafka
+      KAFKA_CONTROLLER_LISTENER_NAME: CONTROLLER  # Set the controller listener name for Kafka
+      # TELL KAFKA HOW IT SHOULD ADVERTISE ITSELF TO CLIENTS
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://localhost:9094   # Advertise the Kafka broker's address for clients to connect
+      KAFKA_LOG_DIRS: /var/lib/kafka/data  # Set the log directory for Kafka data persistence
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"  # Enable automatic topic creation in Kafka
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1  # Set the replication factor for the offsets topic in Kafka
+      KAFKA_LOG_RETENTION_HOURS: 168  # Set the log retention period for Kafka to 7 days (168 hours)
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0  # Set the initial rebalance delay for Kafka consumer groups to 0 milliseconds
+      CLUSTER_ID: "QhScqhmOShKhnP-vFRjweQ "  # Set a unique cluster ID for Kafka
+    volumes:
+      - kafka_data:/var/lib/kafka/data  # Mount a volume for Kafka data persistence
+    networks:
+      - stock_data  # Connect to the same network as other services
+
+
+
+  # ---------------------------KAFKA UI SERVICE: It enable us to view Kafka in a web format ---------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2  # Use the Kafka UI image from Provectus Labs
+    container_name: kafka-ui # Name the container for easier reference
+    ports:
+      - "8085:8080"  # Expose the Kafka UI on port 8080
+    environment:
+      KAFKA_CLUSTERS_0_NAME: "local"  # Set a name for the Kafka cluster in the UI
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:9092"  # Specify the bootstrap servers for Kafka in the UI
+      DYNAMIC_CONFIG_ENABLED: "true"  # Enable dynamic configuration in the Kafka UI
+    depends_on:
+      - kafka  # Ensure Kafka starts before the Kafka UI
+    networks:
+      - stock_data  # Connect to the same network as other services
+
+
+  postgress:
+    image: debezium/postgres:17  # Use the official PostgreSQL image
+    container_name: postgres_db # Name the container for easier reference
+    restart: unless-stopped  # Restart the container unless it is explicitly stopped
+    environment:
+      POSTGRES_USER: admin  # Set the PostgreSQL username
+      POSTGRES_PASSWORD: admin  # Set the PostgreSQL password
+      POSTGRES_DB: stock_data  # Set the PostgreSQL database name
+    ports:
+      - "5434:5432"  # Expose PostgreSQL's default port
+    volumes:
+      - postgres_data:/var/lib/postgres/data  # Mount a volume for PostgreSQL data persistence
+    networks:
+      - stock_data  # Connect to the same network as other services
+
+
+  pgadmin:
+    image: dpage/pgadmin4:9  # Use the official pgAdmin image
+    container_name: pgadmin # Name the container for easier reference
+    restart: always  # Always restart the container if it stops
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com # Set the default email for pgAdmin
+      PGADMIN_DEFAULT_PASSWORD: admin  # Set the default email and password for pgAdmin
+    ports:
+      - "5050:80"  # Expose pgAdmin on port 80
+    depends_on:
+      - postgress  # Ensure PostgreSQL starts before pgAdmin
+    networks:
+      - stock_data  # Connect to the same network as other services
+
+
+
+# --------------------VOLUME AND NEETWORK DEFINITIONS----------------------
+volumes:
+  spark-data:  # Volume for Spark data persistence
+  kafka_data:  # Volume for Kafka data persistence
+  ivy_cache:  # Volume for Spark's Ivy cache, which stores dependencies
+  postgres_data:  # Volume for PostgreSQL data persistence
+
+networks:
+  stock_data:  # Define a custom network for all services to communicate
