@@ -4,7 +4,7 @@ services:
     container_name: spark-master # Name the container for easier reference
     command: [  #Override the default command to start the Spark master
       "/opt/spark/bin/spark-class",
-      "org. apache. spark. deploy.master.Master",
+      "org.apache.spark.deploy.master.Master",
       "--host", "spark-master",
       "--port", "7077",
       "--webui-port", "8080"]  # Expose the necessary ports for Spark master
@@ -48,17 +48,39 @@ services:
       - stock_data  # Connect to the same network as other services
 
 
+  consumer:
+    build:
+      context: ./consumer  # Specify the build context for the consumer service
+      dockerfile: Dockerfile  # Specify the Dockerfile for the consumer service
+    image: stream_consumer # Name the image for the consumer service
+    container_name: consumer # Name the container for easier reference
+    depends_on:
+      - spark-master  # Ensure the consumer service starts after the specified service
+      - kafka  # Ensure the consumer service starts after the Kafka service
+      - postgres  # Ensure PostgreSQL is ready before consumer writes to it
+    restart: unless-stopped  # Restart the container unless it is explicitly stopped
+    volumes:
+      - ivy_cache:/opt/spark/work-dir/.ivy2  # Mount a volume for Spark's Ivy cache, which stores dependencies
+      - ./consumer:/opt/spark/work-dir/aps  # Mount the local consumer directory to the container for access to the consumer code
+    networks:
+      - stock_data  # Connect to the same network as other services
+
 
   # --------------------------KAFKA SERVICE----------------------------
   kafka:
     image: confluentinc/cp-kafka:7.4.10  # Use the Confluent Kafka image
     container_name: kafka # Name the container for easier reference
     ports:
-      - "9092:9092"  # Expose Kafka's default port
-      - "9094:9094"  # Expose Kafka's internal port for inter-broker communication
+      - "9092:9092"  # Expose Kafka's default port for Internal Service
+      - "9094:9094"  # Expose Kafka's External port for inter-broker communication
     environment:
+     # --- ZOOKEEPER SETTINGS ---
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # --- LISTENER SETTINGS (Simplified for Zookeeper) ---
+      # KAFKA_LISTENERS: PLAINTEXT_INTERNAL://0.0.0.0:9092,PLAINTEXT_EXTERNAL://0.0.0.0:9094
+      # --- KRAFT MODE SETTINGS ---
       KAFKA_KRAFT_MODE: "true"  # Enable KRaft mode for Kafka, which eliminates the need for Zookeeper
-      KAFKA_OROCESS_ROLES: controller.broker  # Set the process roles for Kafka to both controller and broker
+      KAFKA_PROCESS_ROLES: controller,broker  # Set the process roles for Kafka to both controller and broker
       KAFKA_BROKER_ID: 1  # Set a unique broker ID for Kafka
       KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"  # Define the controller quorum voters for Kafka
       # DEFINE ALL LISTENER ENDPOINTS AND PORTS
@@ -66,7 +88,7 @@ services:
       # MAP LISTENER NAMES TO SECURITY PROTOCOLS
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_INTERNAL:PLAINTEXT,PLAINTEXT_EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT  # Map the listener names to their respective security protocols
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL  # Set the inter-broker listener name for Kafka
-      KAFKA_CONTROLLER_LISTENER_NAME: CONTROLLER  # Set the controller listener name for Kafka
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER  # Set the controller listener names (must match a listener in KAFKA_LISTENERS)
       # TELL KAFKA HOW IT SHOULD ADVERTISE ITSELF TO CLIENTS
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_INTERNAL://kafka:9092,PLAINTEXT_EXTERNAL://localhost:9094   # Advertise the Kafka broker's address for clients to connect
       KAFKA_LOG_DIRS: /var/lib/kafka/data  # Set the log directory for Kafka data persistence
@@ -74,11 +96,20 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1  # Set the replication factor for the offsets topic in Kafka
       KAFKA_LOG_RETENTION_HOURS: 168  # Set the log retention period for Kafka to 7 days (168 hours)
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0  # Set the initial rebalance delay for Kafka consumer groups to 0 milliseconds
-      CLUSTER_ID: "QhScqhmOShKhnP-vFRjweQ "  # Set a unique cluster ID for Kafka
+      CLUSTER_ID: "uetGpzBFTKqboLO27ofaAQ"  # Set a unique cluster ID for Kafka
     volumes:
       - kafka_data:/var/lib/kafka/data  # Mount a volume for Kafka data persistence
     networks:
       - stock_data  # Connect to the same network as other services
+      
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.10
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    networks:
+      - stock_data
 
 
 
@@ -98,7 +129,7 @@ services:
       - stock_data  # Connect to the same network as other services
 
 
-  postgress:
+  postgres:
     image: debezium/postgres:17  # Use the official PostgreSQL image
     container_name: postgres_db # Name the container for easier reference
     restart: unless-stopped  # Restart the container unless it is explicitly stopped
@@ -124,7 +155,7 @@ services:
     ports:
       - "5050:80"  # Expose pgAdmin on port 80
     depends_on:
-      - postgress  # Ensure PostgreSQL starts before pgAdmin
+      - postgres  # Ensure PostgreSQL starts before pgAdmin
     networks:
       - stock_data  # Connect to the same network as other services
 

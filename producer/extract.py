@@ -26,7 +26,7 @@ def connect_to_api():
             
             json_response.append(data)
 
-            print(response.json())
+            # print(response.json())
             
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching data for {stocks[stock]}: {e}")
